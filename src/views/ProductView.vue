@@ -1,158 +1,204 @@
 <template>
-  <div>
-    <div class="flex justify-between items-center">
-      <h1 class="text-xl font-bold mb-4">Product List</h1>
-      <button class="px-4 py-2 bg-blue-600 text-white" @click="newProduct">Add Product</button>
-
+  <div class="container mx-auto p-4">
+    <div class="flex justify-between items-center mb-4">
+      <h1 class="text-2xl font-bold text-blue-600">Product List</h1>
+      <button
+        class="px-4 py-2 bg-blue-600 text-white rounded-md shadow hover:bg-blue-700 transition duration-200"
+        @click="newProduct"
+      >
+        Add Product
+      </button>
     </div>
 
     <!-- Search and Filter -->
     <div class="flex mb-4 space-x-4">
-      <input v-model="searchQuery" @input="filterProducts" placeholder="Search products..." class="border p-2" />
-
-      <select v-model="selectedCategory" @change="filterProducts" class="border p-2">
+      <input
+        v-model="searchQuery"
+        @input="fetchProducts"
+        placeholder="Search products..."
+        class="border border-gray-300 text-slate-600 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
+      />
+      <select
+        v-model="selectedCategory"
+        @change="fetchProducts"
+        class="border border-gray-300 text-slate-600 rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-blue-600"
+      >
         <option value="">All Categories</option>
-        <option v-for="category in categories" :key="category.id" :value="category.id">
-
-          {{ category.name }}
+        <option v-for="category in categories" :key="category" :value="category">
+          {{ category }}
         </option>
       </select>
     </div>
 
     <!-- Product List -->
-    <div>
+    <div class="bg-white rounded-lg shadow">
       <ul>
-        <li v-for="product in paginatedProducts" :key="product.id" class="flex justify-between border-b p-2">
-          <span>
-
-            {{ product.name }} -
-
-            {{ product.description }}</span>
-          <button @click="deleteProduct(product.id)" class="text-red-500">Delete</button>
+        <li
+          v-for="product in products.data"
+          :key="product.id"
+          class="flex justify-between items-center border-b p-4 text-gray-700 hover:bg-gray-100"
+        >
+          <div>
+            <h3 class="font-semibold">{{ product.name }}</h3>
+            <p class="text-sm text-gray-500">{{ product.description }}</p>
+          </div>
+          <div>
+            <button
+              @click="editProduct(product.id)"
+              class="text-blue-500 hover:underline mr-2"
+            >
+              Edit
+            </button>
+            <button
+              @click="deleteProduct(product.id)"
+              class="text-red-500 hover:underline"
+            >
+              Delete
+            </button>
+          </div>
         </li>
       </ul>
     </div>
 
-    <!-- Pagination -->
-    <div class="mt-4">
-      <button @click="prevPage" :disabled="currentPage === 1">Previous</button>
-      <button @click="nextPage" :disabled="!hasMorePages">Next</button>
+    <!-- Pagination Info and Buttons -->
+    <div class="mt-8 flex justify-between items-center">
+      <!-- Page Info -->
+      <span class="text-gray-600">
+        Page {{ currentPage }} of {{ totalPages }} ({{ totalItems }} items)
+      </span>
+
+      <!-- Pagination Buttons -->
+      <div>
+        <button
+          @click="prevPage"
+          :disabled="currentPage === 1"
+          class="bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 mr-2 transition duration-200"
+        >
+          Previous
+        </button>
+        <button
+          @click="nextPage"
+          :disabled="currentPage === totalPages"
+          class="bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 transition duration-200"
+        >
+          Next
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
+
 <script>
-import { ref, computed, onMounted } from 'vue';
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue';
+import axios from 'axios';
+import { useRouter } from 'vue-router';
+
+axios.defaults.baseURL = 'http://127.0.0.1:8000/api';
+
+axios.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+    config.headers.Authorization = `Bearer ${token}`;
+  return config;
+}, error => {
+  return Promise.reject(error);
+});
 
 export default {
   name: 'ProductIndex',
   setup() {
+    const products = ref({ data: [], prev_page_url: null, next_page_url: null });
+    const categories = ref([]);
+    const searchQuery = ref('');
+    const selectedCategory = ref('');
+    const currentPage = ref(1);
+    const totalPages = ref(0);
+    const totalItems = ref(0);
 
     const router = useRouter();
 
-    const newProduct = () => {
-      router.push('/products/create');
-    }
-    // Dummy Product Data
-    const products = ref([
-      { id: 1, name: 'Product A', description: 'Description A', category_id: 1 },
-      { id: 2, name: 'Product B', description: 'Description B', category_id: 2 },
-      { id: 3, name: 'Product C', description: 'Description C', category_id: 1 },
-      { id: 4, name: 'Product D', description: 'Description D', category_id: 3 },
-      { id: 5, name: 'Product E', description: 'Description E', category_id: 2 },
-      { id: 6, name: 'Product F', description: 'Description F', category_id: 3 },
-      { id: 7, name: 'Product G', description: 'Description G', category_id: 1 },
-      { id: 8, name: 'Product H', description: 'Description H', category_id: 2 },
-      // More dummy data as needed...
-    ]);
-
-    const categories = ref([
-      { id: 1, name: 'Category 1' },
-      { id: 2, name: 'Category 2' },
-      { id: 3, name: 'Category 3' },
-    ]);
-
-    const searchQuery = ref('');
-    const selectedCategory = ref('');
-    const filteredProducts = ref([...products.value]);
-
-    const currentPage = ref(1);
-    const itemsPerPage = 3;
-
-    const filterProducts = () => {
-      let tempProducts = [...products.value];
-
-      // Apply search filter
-      if (searchQuery.value) {
-        const search = searchQuery.value.toLowerCase();
-        tempProducts = tempProducts.filter(product =>
-          product.name.toLowerCase().includes(search) ||
-          product.description.toLowerCase().includes(search)
-        );
+    const fetchProducts = async (page = 1) => {
+      try {
+        const response = await axios.get('/products', {
+          params: {
+            search: searchQuery.value,
+            category: selectedCategory.value,
+            page: page,
+          },
+        });
+        currentPage.value = response.data.meta.current_page;
+        totalPages.value = response.data.meta.last_page;
+        totalItems.value = response.data.meta.total;
+        products.value = response.data;
+      } catch (error) {
+        console.error('Error fetching products:', error);
       }
-
-      // Apply category filter
-      if (selectedCategory.value) {
-        tempProducts = tempProducts.filter(
-          product => product.category_id === parseInt(selectedCategory.value)
-        );
-      }
-
-      filteredProducts.value = tempProducts;
-      currentPage.value = 1; // Reset to first page when filtering
     };
 
-    const paginatedProducts = computed(() => {
-      const start = (currentPage.value - 1) * itemsPerPage;
-      const end = start + itemsPerPage;
-      return filteredProducts.value.slice(start, end);
-    });
+    const fetchCategories = async () => {
+      try {
+        const response = await axios.get('/products/categories'); 
+        categories.value = response.data;
+        console.l
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+      }
+    };
 
-    const totalPages = computed(() => {
-      return Math.ceil(filteredProducts.value.length / itemsPerPage);
-    });
+    const deleteProduct = async (productId) => {
+      if (confirm('Are you sure you want to delete this product?')) {
+        try {
+          await axios.delete(`/products/${productId}`);
+          fetchProducts();
+        } catch (error) {
+          console.error('Error deleting product:', error);
+        }
+      }
+    };
 
-    const hasMorePages = computed(() => {
-      return currentPage.value < totalPages.value;
-    });
+    const editProduct = (productId) => {
+      router.push(`/products/${productId}/edit`);
+    };
 
     const prevPage = () => {
-      if (currentPage.value > 1) {
+
+      if (products.value.links.prev) {
         currentPage.value--;
+        fetchProducts(currentPage.value);
       }
     };
 
-    const nextPage = () => {
-      if (currentPage.value < totalPages.value) {
-        currentPage.value++;
-      }
-    };
+  const nextPage = () => {
 
-    const deleteProduct = (id) => {
-      const index = products.value.findIndex(product => product.id === id);
-      if (index !== -1) {
-        products.value.splice(index, 1);
-        filterProducts(); // Reapply filters after deletion
-      }
+    if (products.value.links.next) {
+      currentPage.value++; 
+      fetchProducts(currentPage.value);
+    }
+  };
+
+    const newProduct = () => {
+      router.push('/products/create');
     };
 
     onMounted(() => {
-      filterProducts(); // Apply filters on mount
+      fetchProducts();
+      fetchCategories();
     });
 
     return {
+      products,
+      categories,
       searchQuery,
       selectedCategory,
-      categories,
-      paginatedProducts,
-      currentPage,
-      hasMorePages,
-      filterProducts,
+      fetchProducts,
+      deleteProduct,
+      newProduct,
       prevPage,
       nextPage,
-      deleteProduct,
-      newProduct
+      totalPages,
+      totalItems,
+      currentPage,
+      editProduct
     };
   },
 };

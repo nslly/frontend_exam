@@ -1,19 +1,16 @@
 <template>
     <div class="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg">
-        <h1 class="text-2xl text-blue-600 font-bold mb-6 text-center">Create Product</h1>
+        <h1 class="text-2xl text-blue-600 font-bold mb-6 text-center">Edit Product</h1>
 
         <div class="mb-8">
-            <div class="flex justify-between mb-4">
-                <span :class="['step-indicator', step.value >= 1 ? 'step-active' : '']">1. Product Details</span>
-                <span :class="['step-indicator', step.value >= 2 ? 'step-active' : '']">2. Upload Images</span>
-                <span :class="['step-indicator', step.value >= 3 ? 'step-active' : '']">3. Date and Time</span>
-            </div>
-            <div class="relative h-1 bg-gray-300 rounded">
-                <div
-                    class="absolute top-0 h-1 bg-blue-600 rounded"
-                    :style="{ width: stepProgress + '%' }">
-                </div>
-            </div>
+        <div class="flex justify-between mb-4">
+            <span :class="['step-indicator', step.value >= 1 ? 'step-active' : '']">1. Product Details</span>
+            <span :class="['step-indicator', step.value >= 2 ? 'step-active' : '']">2. Upload Images</span>
+            <span :class="['step-indicator', step.value >= 3 ? 'step-active' : '']">3. Date and Time</span>
+        </div>
+        <div class="relative h-1 bg-gray-300 rounded">
+            <div class="absolute top-0 h-1 bg-blue-600 rounded" :style="{ width: stepProgress + '%' }"></div>
+        </div>
         </div>
 
         <div v-if="step === 1">
@@ -43,7 +40,6 @@
                 <button type="submit" class="btn-primary w-full">Next</button>
             </form>
         </div>
-
 
         <div v-if="step === 2">
             <h2 class="text-xl font-semibold mb-4 text-slate-600">Step 2: Upload Images</h2>
@@ -81,21 +77,25 @@
 
         <div v-if="step.value > 1" class="mt-6 flex justify-between">
             <button @click="prevStep" type="button" class="btn-secondary">Back</button>
+            <button @click="router.push('/products')" type="button" class="btn-secondary">Cancel</button>
         </div>
     </div>
 </template>
 
 <script>
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import axios from 'axios';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
+
+axios.defaults.withCredentials = true;
 
 
 axios.defaults.baseURL = 'http://127.0.0.1:8000/api';
 
-
 export default {
     setup() {
+        const route = useRoute();
+        const router = useRouter();
         const step = ref(1);
 
         const form = reactive({
@@ -107,14 +107,29 @@ export default {
             time: '',
         });
 
-        const router = useRouter();
-
-
         const errors = reactive({});
-        const categories = ref(['Electronics', 'Furniture', 'Clothing', 'Books']);
+        const categories = ref(['Electronics', 'Furniture', 'Clothing', 'Books']); 
+
+        const fetchProduct = async () => {
+        const productId = route.params.id; // Get product ID from route
+            try {
+                const response = await axios.get(`/products/${productId}`);
+                const product = response.data.data;
+                form.name = product.name;
+                form.category = product.category;
+                form.description = product.description;
+            
+            } catch (error) {
+                console.error('Error fetching product:', error);
+            }
+            };
+
+        onMounted(() => {
+        fetchProduct(); 
+        });
 
         const nextStep = (currentStep) => {
-            Object.keys(errors).forEach(key => delete errors[key]);
+            Object.keys(errors).forEach((key) => delete errors[key]);
 
             if (currentStep === 1) {
                 if (!form.name) errors.name = 'Product name is required.';
@@ -129,52 +144,71 @@ export default {
 
                 if (Object.keys(errors).length === 0) step.value++;
             }
-        };
+            };
 
-        const prevStep = () => {
-            if (step.value > 1) step.value--;
-        };
+            const prevStep = () => {
+                if (step.value > 1) step.value--;
+            };
 
-        const handleFileUpload = (event) => {
-            form.images = Array.from(event.target.files);
-        };
+            const handleFileUpload = (event) => {
+                const files = Array.from(event.target.files);
+                delete errors.images;
+
+                if (files.length + form.images.length > 5) {
+                    errors.images = 'You can upload up to 5 images.';
+                    return;
+                }
+
+                form.images.push(...files);
+                console.log('Current images:', form.images); 
+            };
+
+
 
         const submitForm = async () => {
-            Object.keys(errors).forEach(key => delete errors[key]);
+            Object.keys(errors).forEach((key) => delete errors[key]);
 
-            if (!form.date) errors.date = 'Date is required.';
-            if (!form.time) errors.time = 'Time is required.';
+            if (!form.name) errors.name = 'Product name is required.';
+            if (!form.category) errors.category = 'Category is required.';
+            if (!form.description) errors.description = 'Description is required.';
+            if (form.images.length === 0) errors.images = 'At least one image is required.';
 
-            if (Object.keys(errors).length === 0) {
-                try {
-                    const formData = new FormData();
-                    formData.append('name', form.name);
-                    formData.append('category', form.category);
-                    formData.append('description', form.description);
-                    formData.append('date', form.date); 
-                    formData.append('time', form.time);
+            if (Object.keys(errors).length > 0) {
+                return;
+            }
 
-                    form.images.forEach((image, index) => {
-                        formData.append(`images[${index}]`, image);
-                    });
+            // Create FormData
+            const formData = new FormData();
+            formData.append('name', form.name);
+            formData.append('category', form.category);
+            formData.append('description', form.description);
 
-                    await axios.post('/products', formData, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data',
-                        },
-                    });
 
-                    router.push('/products');
-                    alert('Product created successfully!');
-                } catch (error) {
-                    console.error('Error submitting form:', error);
+
+            form.images.forEach((image, index) => {
+                formData.append(`images[${index}]`, image);
+            });
+
+            try {
+                const productId = route.params.id; 
+                await axios.put(`/products/${productId}`, formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                });
+
+                router.push('/products'); 
+            } catch (error) {
+                console.error('Error submitting form:', error);
+                if (error.response) {
+                    console.error('Validation errors:', error.response.data.errors); 
                 }
             }
         };
 
-        const stepProgress = computed(() => {
-            return (step.value / 3) * 100;
-        });
+
+
+        const stepProgress = computed(() => (step.value / 3) * 100);
 
         return {
             step,
@@ -190,6 +224,8 @@ export default {
     },
 };
 </script>
+
+
 
 <style scoped>
 .step-indicator {
