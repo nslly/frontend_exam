@@ -40,6 +40,11 @@ php artisan storage:link
 
  php artisan serve
 
+9. You can use this auth.
+    email: admin@admin.com
+    password: password
+
+
 
 After you copy the BACK END, you can set up the FRONT END Vue project as follows:
 
